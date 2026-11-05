@@ -1,0 +1,564 @@
+#usage "<b>Charmhigh reel placement export</b>\n"
+       "<p>Reads a Charmhigh .dpv reel table, lets the user assign each component to a station, and writes a top-layer placement file.</p>\n"
+       "<author>Ravn Emilie</author>\n"
+
+// THIS PROGRAM IS PROVIDED AS IS AND WITHOUT WARRANTY OF ANY KIND, EXPRESSED OR IMPLIED
+
+string CfgFile;
+string DpvDir = "";
+int DefaultRotation = 0;
+
+string StationNo[];
+string StationLabel[];
+string StationX[];
+string StationY[];
+string StationNote[];
+string StationRaw[];
+string StationChoice[];
+int StationCount = 0;
+
+string ElemName[];
+string ElemValue[];
+string ElemDevice[];
+string ElemPackage[];
+string ElemDescription[];
+string ElemX[];
+string ElemY[];
+int ElemStation[];
+int ElemHead[];
+int ElemAngle[];
+int ElemReelAngleSel[];
+string ElemConfidence[];
+int ElemCount = 0;
+
+string LearnToken[];
+string LearnStationId[];
+int LearnHead[];
+int LearnReelRotation[];
+int LearnCount[];
+int LearnRows = 0;
+
+string ProfileStationId[];
+int ProfileHead[];
+int ProfileReelRotation[];
+int ProfileRows = 0;
+
+string ReelAngleChoice[] = { "0", "90", "-90", "180" };
+int ReelAngleValue[] = { 0, 90, -90, 180 };
+
+string trim(string s) {
+  while (strlen(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\r' || s[0] == '\n')) s = strsub(s, 1);
+  while (strlen(s) > 0 && (s[strlen(s) - 1] == ' ' || s[strlen(s) - 1] == '\t' || s[strlen(s) - 1] == '\r' || s[strlen(s) - 1] == '\n')) s = strsub(s, 0, strlen(s) - 1);
+  return s;
+}
+
+int normalizeAngle(int a) {
+  while (a > 180) a -= 360;
+  while (a < -180) a += 360;
+  return a;
+}
+
+int tokenUsable(string s) {
+  if (!s) return 0;
+  if (strstr(s, ",") >= 0) return 0;
+  if (strstr(s, "\n") >= 0) return 0;
+  if (strstr(s, "\r") >= 0) return 0;
+  return 1;
+}
+
+int reelSelFromAngle(int a) {
+  int n = normalizeAngle(a);
+  if (n == 90) return 1;
+  if (n == -90) return 2;
+  if (n == 180 || n == -180) return 3;
+  return 0;
+}
+
+int reelAngleFromSel(int s) {
+  if (s < 0 || s > 3) return 0;
+  return ReelAngleValue[s];
+}
+
+string compactToken(string s) {
+  string t = strlwr(trim(s));
+  string out = "";
+  int i = 0;
+  for (i = 0; i < strlen(t); i++) {
+    if (t[i] == ' ' || t[i] == '\t' || t[i] == '\r' || t[i] == '\n') continue;
+    out += strsub(t, i, 1);
+  }
+  return out;
+}
+
+string sizeToken(string packageName) {
+  string p = strlwr(packageName);
+  int plen = strlen(p);
+  int i = 0;
+  for (i = 0; i <= plen - 4; i++) {
+    if (isdigit(p[i]) && isdigit(p[i + 1]) && isdigit(p[i + 2]) && isdigit(p[i + 3])) return strsub(p, i, 4);
+  }
+  for (i = 0; i <= plen - 3; i++) {
+    if (isdigit(p[i]) && isdigit(p[i + 1]) && isdigit(p[i + 2])) return strsub(p, i, 3);
+  }
+  return "";
+}
+
+string classFromRef(string refName) {
+  if (!refName) return "";
+  string p = strupr(strsub(refName, 0, 1));
+  if (p == "C") return "capacitor";
+  if (p == "R") return "resistor";
+  if (p == "D") return "diode";
+  if (p == "L") return "inductor";
+  if (p == "Q" || p == "T") return "transistor";
+  if (p == "U") return "ic";
+  return "";
+}
+
+int classMatchScore(string noteLower, string c) {
+  if (!c) return 0;
+  if (c == "capacitor" && (strstr(noteLower, "capacitor") >= 0 || strstr(noteLower, "cap") >= 0)) return 3;
+  if (c == "resistor" && (strstr(noteLower, "resistor") >= 0 || strstr(noteLower, "res") >= 0)) return 3;
+  if (c == "diode" && strstr(noteLower, "diode") >= 0) return 3;
+  if (c == "inductor" && (strstr(noteLower, "inductor") >= 0 || strstr(noteLower, "coil") >= 0)) return 3;
+  if (c == "transistor" && (strstr(noteLower, "transistor") >= 0 || strstr(noteLower, "npn") >= 0 || strstr(noteLower, "pnp") >= 0 || strstr(noteLower, "fet") >= 0 || strstr(noteLower, "mos") >= 0)) return 3;
+  if (c == "ic" && (strstr(noteLower, "ic") >= 0 || strstr(noteLower, "attiny") >= 0 || strstr(noteLower, "lm") >= 0 || strstr(noteLower, "opamp") >= 0 || strstr(noteLower, "mcu") >= 0)) return 2;
+  return 0;
+}
+
+void addLearn(string token, string stationNo, int head, int reelRotation, int delta) {
+  if (!tokenUsable(token) || !stationNo) return;
+  int i = 0;
+  for (i = 0; i < LearnRows; i++) {
+    if (LearnToken[i] == token && LearnStationId[i] == stationNo && LearnHead[i] == head && LearnReelRotation[i] == reelRotation) {
+      LearnCount[i] += delta;
+      return;
+    }
+  }
+  LearnToken[LearnRows] = token;
+  LearnStationId[LearnRows] = stationNo;
+  LearnHead[LearnRows] = head;
+  LearnReelRotation[LearnRows] = reelRotation;
+  LearnCount[LearnRows] = delta;
+  LearnRows++;
+}
+
+void upsertProfile(string stationId, int head, int reelRotation) {
+  if (!stationId) return;
+  int i = 0;
+  for (i = 0; i < ProfileRows; i++) {
+    if (ProfileStationId[i] == stationId) {
+      ProfileHead[i] = head;
+      ProfileReelRotation[i] = normalizeAngle(reelRotation);
+      return;
+    }
+  }
+  ProfileStationId[ProfileRows] = stationId;
+  ProfileHead[ProfileRows] = head;
+  ProfileReelRotation[ProfileRows] = normalizeAngle(reelRotation);
+  ProfileRows++;
+}
+
+void writeConfig() {
+  output(CfgFile, "wt") {
+    int i = 0;
+    printf("DpvDirectory=%s\n", DpvDir);
+    printf("DefaultRotation=%d\n", DefaultRotation);
+    for (i = 0; i < ProfileRows; i++) {
+      if (ProfileStationId[i]) {
+        printf("Profile,%s,%d,%d\n", ProfileStationId[i], ProfileHead[i], ProfileReelRotation[i]);
+      }
+    }
+    for (i = 0; i < LearnRows; i++) {
+      if (tokenUsable(LearnToken[i]) && LearnCount[i] > 0) {
+        printf("Learn,%s,%s,%d,%d,%d\n", LearnToken[i], LearnStationId[i], LearnHead[i], LearnReelRotation[i], LearnCount[i]);
+      }
+    }
+  }
+}
+
+void loadConfig() {
+  if (!filesize(CfgFile)) return;
+
+  string rows[];
+  int rowCount = fileread(rows, CfgFile);
+  LearnRows = 0;
+  ProfileRows = 0;
+
+  int i = 0;
+  for (i = 0; i < rowCount; i++) {
+    string line = trim(rows[i]);
+    if (!line) continue;
+
+    if (strstr(line, "DpvDirectory=") == 0) {
+      DpvDir = trim(strsub(line, strlen("DpvDirectory=")));
+    }
+    else if (strstr(line, "DefaultRotation=") == 0) {
+      DefaultRotation = strtol(trim(strsub(line, strlen("DefaultRotation="))));
+    }
+    else if (strstr(line, "Learn,") == 0) {
+      string cols[];
+      int n = strsplit(cols, line, ',');
+      if (n >= 6 && tokenUsable(trim(cols[1]))) {
+        LearnToken[LearnRows] = trim(cols[1]);
+        LearnStationId[LearnRows] = trim(cols[2]);
+        LearnHead[LearnRows] = strtol(trim(cols[3]));
+        LearnReelRotation[LearnRows] = strtol(trim(cols[4]));
+        LearnCount[LearnRows] = strtol(trim(cols[5]));
+        LearnRows++;
+      }
+    }
+    else if (strstr(line, "Profile,") == 0) {
+      string cols2[];
+      int n2 = strsplit(cols2, line, ',');
+      if (n2 >= 4 && trim(cols2[1])) {
+        upsertProfile(trim(cols2[1]), strtol(trim(cols2[2])), strtol(trim(cols2[3])));
+      }
+    }
+  }
+}
+
+string newestDpvInDir(string dir) {
+  string files[];
+  int n = fileglob(files, dir + "/*.dpv");
+  if (n < 1) return "";
+
+  string newest = "";
+  string tmpList = CfgFile + ".dpvlist.tmp";
+  string cmd = "ls -1t \"" + dir + "\"/*.dpv > \"" + tmpList + "\" 2>/dev/null";
+  if (system(cmd) == 0 && filesize(tmpList)) {
+    string rows[];
+    int rowCount = fileread(rows, tmpList);
+    if (rowCount > 0) newest = trim(rows[0]);
+  }
+  system("rm -f \"" + tmpList + "\"");
+
+  if (!newest) newest = files[0];
+  return newest;
+}
+
+void loadStations(string dpvFile) {
+  StationCount = 0;
+  if (!filesize(dpvFile)) return;
+
+  string rows[];
+  int rowCount = fileread(rows, dpvFile);
+  int i = 0;
+
+  for (i = 0; i < rowCount; i++) {
+    string line = trim(rows[i]);
+    if (!line) continue;
+    if (strstr(line, "Station,") != 0) continue;
+
+    string cols[];
+    int colCount = strsplit(cols, line, ',');
+    if (colCount < 7) continue;
+
+    StationNo[StationCount] = trim(cols[1]);
+    StationX[StationCount] = trim(cols[3]);
+    StationY[StationCount] = trim(cols[4]);
+    StationNote[StationCount] = trim(cols[6]);
+    StationLabel[StationCount] = "ST" + StationNo[StationCount] + ". " + StationNote[StationCount];
+    StationRaw[StationCount] = line;
+    StationCount++;
+  }
+
+  StationChoice[0] = "Do not place";
+  for (i = 0; i < StationCount; i++) StationChoice[i + 1] = StationLabel[i];
+}
+
+void collectTopParts() {
+  ElemCount = 0;
+
+  board(B) {
+    B.elements(E) if (E.populate) {
+      int wasTopSmd = 0;
+      int xmax = -2147483648;
+      int xmin = 2147483647;
+      int ymax = -2147483648;
+      int ymin = 2147483647;
+      E.package.contacts(C) {
+        if (C.smd && C.smd.layer == 1) {
+          wasTopSmd = 1;
+          if (C.x > xmax) xmax = C.x;
+          if (C.x < xmin) xmin = C.x;
+          if (C.y > ymax) ymax = C.y;
+          if (C.y < ymin) ymin = C.y;
+        }
+      }
+      if (!wasTopSmd) continue;
+
+      ElemName[ElemCount] = E.name;
+      ElemValue[ElemCount] = E.value;
+      ElemDevice[ElemCount] = E.package.library;
+      ElemPackage[ElemCount] = E.package.name;
+      ElemDescription[ElemCount] = E.package.name;
+      sprintf(ElemX[ElemCount], "%.2f", u2mm((xmin + xmax) / 2));
+      sprintf(ElemY[ElemCount], "%.2f", u2mm((ymin + ymax) / 2));
+      ElemStation[ElemCount] = 0;
+      ElemHead[ElemCount] = 1;
+      ElemAngle[ElemCount] = normalizeAngle(E.angle);
+      ElemReelAngleSel[ElemCount] = 0;
+      ElemConfidence[ElemCount] = "None";
+      ElemCount++;
+    }
+  }
+}
+
+void autoDetectAssignments() {
+  int e = 0;
+  for (e = 0; e < ElemCount; e++) {
+    string valueLower = strlwr(trim(ElemValue[e]));
+    string valueCompact = compactToken(ElemValue[e]);
+    string packageLower = strlwr(trim(ElemPackage[e]));
+    string classToken = classFromRef(ElemName[e]);
+    string pkgSize = sizeToken(ElemPackage[e]);
+
+    int bestScore = 0;
+    int bestStation = 0;
+    int bestHead = 1;
+    int bestReel = 0;
+
+    int s = 0;
+    for (s = 0; s < StationCount; s++) {
+      string noteLower = strlwr(StationNote[s]);
+      string noteCompact = compactToken(StationNote[s]);
+      int score = 0;
+      int headVote1 = 0;
+      int headVote2 = 0;
+      int reelVote0 = 0;
+      int reelVote90 = 0;
+      int reelVoteN90 = 0;
+      int reelVote180 = 0;
+      int profileHead = 1;
+      int profileReelSel = 0;
+      int p = 0;
+
+      for (p = 0; p < ProfileRows; p++) {
+        if (ProfileStationId[p] == noteCompact || ProfileStationId[p] == StationNo[s]) {
+          profileHead = (ProfileHead[p] == 2) ? 2 : 1;
+          profileReelSel = reelSelFromAngle(ProfileReelRotation[p]);
+          score += 2;
+          break;
+        }
+      }
+
+      if (valueLower && strstr(noteLower, valueLower) >= 0) score += 6;
+      if (valueCompact && strstr(noteCompact, valueCompact) >= 0) score += 12;
+      if (packageLower && strstr(noteLower, packageLower) >= 0) score += 4;
+      if (pkgSize && strstr(noteLower, pkgSize) >= 0) score += 4;
+      score += classMatchScore(noteLower, classToken);
+
+      int l = 0;
+      for (l = 0; l < LearnRows; l++) {
+        if (LearnStationId[l] != compactToken(StationNote[s]) && LearnStationId[l] != StationNo[s]) continue;
+        if (LearnToken[l] == valueLower || LearnToken[l] == packageLower || LearnToken[l] == pkgSize || LearnToken[l] == classToken) {
+          score += LearnCount[l] * 5;
+          if (LearnHead[l] == 2) headVote2 += LearnCount[l];
+          else headVote1 += LearnCount[l];
+          if (normalizeAngle(LearnReelRotation[l]) == 90) reelVote90 += LearnCount[l];
+          else if (normalizeAngle(LearnReelRotation[l]) == -90) reelVoteN90 += LearnCount[l];
+          else if (normalizeAngle(LearnReelRotation[l]) == 180 || normalizeAngle(LearnReelRotation[l]) == -180) reelVote180 += LearnCount[l];
+          else reelVote0 += LearnCount[l];
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestStation = s + 1; // StationChoice index; 0 is Do not place
+        if (headVote1 == 0 && headVote2 == 0) bestHead = profileHead;
+        else bestHead = (headVote2 > headVote1) ? 2 : 1;
+
+        bestReel = profileReelSel;
+        if (reelVote90 > reelVote0 && reelVote90 >= reelVoteN90 && reelVote90 >= reelVote180) bestReel = 1;
+        else if (reelVoteN90 > reelVote0 && reelVoteN90 > reelVote90 && reelVoteN90 >= reelVote180) bestReel = 2;
+        else if (reelVote180 > reelVote0 && reelVote180 > reelVote90 && reelVote180 > reelVoteN90) bestReel = 3;
+      }
+    }
+
+    if (bestScore > 0) {
+      ElemStation[e] = bestStation;
+      ElemHead[e] = bestHead;
+      ElemReelAngleSel[e] = bestReel;
+      if (bestScore >= 18) ElemConfidence[e] = "High";
+      else if (bestScore >= 10) ElemConfidence[e] = "Medium";
+      else ElemConfidence[e] = "Low";
+    }
+    else {
+      ElemStation[e] = 0;
+      ElemHead[e] = 1;
+      ElemReelAngleSel[e] = 0;
+      ElemConfidence[e] = "None";
+    }
+  }
+}
+
+void learnFromSelections() {
+  int e = 0;
+  for (e = 0; e < ElemCount; e++) {
+    if (ElemStation[e] <= 0) continue;
+    int stationIndex = ElemStation[e] - 1;
+
+    string stationId = compactToken(StationNote[stationIndex]);
+    int head = ElemHead[e];
+    int reelRotation = reelAngleFromSel(ElemReelAngleSel[e]);
+
+    upsertProfile(stationId, head, reelRotation);
+    upsertProfile(StationNo[stationIndex], head, reelRotation);
+
+    string valueToken = strlwr(trim(ElemValue[e]));
+    string packageToken = strlwr(trim(ElemPackage[e]));
+    string classToken = classFromRef(ElemName[e]);
+    string pkgSize = sizeToken(ElemPackage[e]);
+
+    if (tokenUsable(valueToken)) addLearn(valueToken, stationId, head, reelRotation, 1);
+    if (tokenUsable(packageToken)) addLearn(packageToken, stationId, head, reelRotation, 1);
+    if (tokenUsable(classToken)) addLearn(classToken, stationId, head, reelRotation, 1);
+    if (tokenUsable(pkgSize)) addLearn(pkgSize, stationId, head, reelRotation, 1);
+  }
+}
+
+void writeOutput(string outFile) {
+  string boardName = "";
+  board(B) {
+    boardName = B.name;
+  }
+
+  string dateText = "0000/00/00";
+  string timeText = "00:00:00";
+  string dTmp = CfgFile + ".date.tmp";
+  string tTmp = CfgFile + ".time.tmp";
+
+  if (system("date +%Y/%d/%m > \"" + dTmp + "\" 2>/dev/null") == 0 && filesize(dTmp)) {
+    string d[];
+    if (fileread(d, dTmp) > 0) dateText = trim(d[0]);
+  }
+  if (system("date +%H:%M:%S > \"" + tTmp + "\" 2>/dev/null") == 0 && filesize(tTmp)) {
+    string t[];
+    if (fileread(t, tTmp) > 0) timeText = trim(t[0]);
+  }
+  system("rm -f \"" + dTmp + "\"");
+  system("rm -f \"" + tTmp + "\"");
+
+  output(outFile, "wt") {
+    printf("separated\n");
+    printf("FILE,%s\n", filename(outFile));
+    printf("PCBFILE,%s\n", boardName);
+    printf("DATE,%s\n", dateText);
+    printf("TIME,%s\n", timeText);
+    printf("PANELYPE,1\n\n");
+
+    printf("Table,No.,ID,DeltX,DeltY,FeedRates,Note,Height,Speed,Status,SizeX,SizeY,HeightTake,DelayTake,nPullStripSpeed\n\n");
+    int i = 0;
+    for (i = 0; i < StationCount; i++) printf("%s\n\n", StationRaw[i]);
+
+    printf("Table,No.,ID,IntervalX,IntervalY,NumX,NumY\n\n");
+    printf("Panel_Array,0,1,0,0,1,1\n\n\n");
+    printf("Table,No.,ID,PHead,STNo.,DeltX,DeltY,Angle,Height,Skip,Speed,Explain,Note\n\n");
+
+    int j = 0;
+    int outNo = 0;
+    for (j = 0; j < ElemCount; j++) {
+      if (ElemStation[j] <= 0) continue;
+      int stationIndex = ElemStation[j] - 1;
+      string note = ElemValue[j];
+      if (!note) note = ElemDescription[j];
+      printf("EComponent,%d,%d,%d,%s,%s,%s,%d,0.5,6,0,%s,%s\n\n",
+             outNo,
+             outNo + 1,
+             ElemHead[j],
+             StationNo[stationIndex],
+             ElemX[j],
+             ElemY[j],
+             normalizeAngle(ElemAngle[j] + reelAngleFromSel(ElemReelAngleSel[j])),
+             ElemName[j],
+             note);
+      outNo++;
+    }
+
+    printf("Table,No.,ID,CenterX,CenterY,IntervalX,IntervalY,NumX,NumY,Start\n\n\n");
+    printf("Table,No.,nType,nAlg,nFinished\n");
+  }
+}
+
+if (board) board(B) {
+  string scriptDir = filedir(argv[0]);
+  if (!scriptDir) scriptDir = ".";
+  CfgFile = scriptDir + "/mountCHMT.cfg";
+
+  loadConfig();
+
+  if (!DpvDir) {
+    DpvDir = dlgDirectory("Select Dpv directory", scriptDir);
+    if (!DpvDir) exit(0);
+    writeConfig();
+  }
+
+  string dpvFile = newestDpvInDir(DpvDir);
+  if (!dpvFile) {
+    dlgMessageBox("No dpv file for reels at " + DpvDir, "OK");
+    exit(0);
+  }
+
+  loadStations(dpvFile);
+  if (StationCount < 1) {
+    dlgMessageBox("No Station rows found in:\n" + dpvFile, "OK");
+    exit(0);
+  }
+
+  collectTopParts();
+  if (ElemCount < 1) {
+    dlgMessageBox("No populated top-layer SMD elements found.", "OK");
+    exit(0);
+  }
+
+  autoDetectAssignments();
+
+  int ok = dlgDialog("Assign CHMT reels") {
+    dlgGridLayout {
+      dlgCell(0, 0) dlgLabel("Part");
+      dlgCell(0, 1) dlgLabel("Value");
+      dlgCell(0, 2) dlgLabel("Device");
+      dlgCell(0, 3) dlgLabel("Package");
+      dlgCell(0, 4) dlgLabel("Description");
+      dlgCell(0, 5) dlgLabel("Station");
+      dlgCell(0, 6) dlgLabel("Head");
+      dlgCell(0, 7) dlgLabel("Angle");
+      dlgCell(0, 8) dlgLabel("Reel angle");
+      dlgCell(0, 9) dlgLabel("Confidence");
+
+      for (int r = 0; r < ElemCount; r++) {
+        dlgCell(r + 1, 0) dlgLabel(ElemName[r]);
+        dlgCell(r + 1, 1) dlgLabel(ElemValue[r]);
+        dlgCell(r + 1, 2) dlgLabel(ElemDevice[r]);
+        dlgCell(r + 1, 3) dlgLabel(ElemPackage[r]);
+        dlgCell(r + 1, 4) dlgLabel(ElemDescription[r]);
+        dlgCell(r + 1, 5) dlgComboBox(StationChoice, ElemStation[r]);
+        dlgCell(r + 1, 6) dlgIntEdit(ElemHead[r], 1, 2);
+        dlgCell(r + 1, 7) dlgIntEdit(ElemAngle[r], -360, 360) {
+          ElemAngle[r] = normalizeAngle(ElemAngle[r]);
+        }
+        dlgCell(r + 1, 8) dlgComboBox(ReelAngleChoice, ElemReelAngleSel[r]);
+        dlgCell(r + 1, 9) dlgLabel(ElemConfidence[r]);
+      }
+    }
+
+    dlgHBoxLayout {
+      dlgPushButton("+OK") dlgAccept();
+      dlgPushButton("-Cancel") dlgReject();
+    }
+  };
+
+  if (!ok) exit(0);
+
+  learnFromSelections();
+  writeConfig();
+
+  string outFile = filesetext(B.name, ".dpv");
+  writeOutput(outFile);
+  dlgMessageBox("Created:\n" + outFile, "OK");
+}
+else {
+  dlgMessageBox("\n    Start this ULP in a Board    \n", "OK");
+  exit(0);
+}
