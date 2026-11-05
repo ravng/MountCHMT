@@ -2,7 +2,7 @@
 
 <img width="1098" height="662" alt="Screenshootulp" src="https://github.com/user-attachments/assets/15937391-5478-47d5-bd6e-fab04b75d853" />
 
-MountCHMT is a custom EAGLE ULP script for exporting top-layer SMD placements to a Charmhigh-compatible `.dpv` placement file.
+MountCHMT is a custom EAGLE ULP script for exporting top-layer SMD placements to a Charmhigh-compatible `.dpv` placement file, for use with pick & place machines like the CHMT36.
 
 ## Requirements
 
