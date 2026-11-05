@@ -554,7 +554,7 @@ if (board) board(B) {
   learnFromSelections();
   writeConfig();
 
-  string outFile = filesetext(B.name, ".dpv");
+  string outFile = DpvDir + "/" + filename(filesetext(B.name, ".dpv"));
   writeOutput(outFile);
   dlgMessageBox("Created:\n" + outFile, "OK");
 }
