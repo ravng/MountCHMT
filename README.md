@@ -6,12 +6,13 @@ MountCHMT is a custom EAGLE ULP script for exporting top-layer SMD placements to
 
 ## Requirements
 
-- Autodesk EAGLE (tested target noted in script: 7.7.0)
-- A directory containing at least one Charmhigh reel table `.dpv` file (If you don't have one create it with the CHMT SmtMain software first).
+- Autodesk EAGLE (tested on version 7.7.0 on linux).
+- A directory containing at least one Charmhigh reel table `.dpv` file.
+(If you don't have one create it with the CHMT SmtMain software first).
 
 ## Usage
 
-The script will read newest modified dpv file to get current Reel setuo.
+The script will read newest modified dpv file to get current Reel setup.
 It will try to guess what reel to use for each component. It will get better for each board you do.
 
 
