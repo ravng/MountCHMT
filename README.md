@@ -18,12 +18,12 @@ It will try to guess what reel to use for each component. It will get better for
 
 1. Open your board in EAGLE.
 2. Run `mountCHMT.ulp`.
-3. On first run, select your reel-table directory when prompted. This is a directory holding your dpv file(s).
+3. On first run, select your dpv output directory when prompted. This is a directory holding your dpv file(s).
 5. Review auto-assigned stations in the dialog, specially:
    - set **Station (Reel)**
    - set **Head** (1 or 2)
 6. Click **OK** to generate output.
-7. File is stored in board working directory as .dpv file.
+7. File is stored in dpv output directory.
 
 Note about **Reel angle** and **Angle**:
 Reel angle let's you adjust any orientation mismatch between physical part on reel and the part in eagle.
